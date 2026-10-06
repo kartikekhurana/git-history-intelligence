@@ -1,5 +1,6 @@
 import sys
 from collections import Counter, defaultdict
+from datetime import datetime, timezone
 
 from models import Commit
 from parser import parse_git_log
@@ -14,8 +15,9 @@ def area_of(path: str, depth : str = 1) -> str:
 
 def find_bus_factor(
     commits: list[Commit], depth: int = 1, min_commits: int = 10, top_n: int = 10
-) -> list[tuple[str, str, float, int, int]]:
+) -> list[tuple[str, str, float, int, int , datetime]]:
     area_authors: defaultdict[str, Counter[str]] = defaultdict(Counter)
+    last_active: dict[tuple[str,str], datetime] = {}
     names: dict[str, str] = {}
 
     for commit in commits:
@@ -26,6 +28,9 @@ def find_bus_factor(
         areas = {area_of(f, depth) for f in commit.files}
         for area in areas:
             area_authors[area][person] += 1
+            key = (area, person)
+            if key not in last_active or commit.date > last_active[key]:
+                last_active[key] = commit.date
 
     results = []
     for area, people in area_authors.items():
@@ -33,13 +38,19 @@ def find_bus_factor(
         if total < min_commits:
             continue
         top_person, top_count = people.most_common(1)[0]
-        results.append((area, names[top_person], top_count / total, total, len(people)))
+        results.append((area, names[top_person], top_count / total, total, len(people), 
+                        last_active[(area , top_person)]
+                        ))
 
     results.sort(key=lambda r: (r[2], r[3]), reverse=True)
     return results[:top_n]
 
 if __name__ == "__main__":
     commits = parse_git_log(sys.stdin.read())
-    for area , author , share, total , n_authors in find_bus_factor(commits):
-        print(f"{share:5.0%}   {author:<22}  {total:5d} commits  {n_authors:3d} authors   {area}")
-    
+    now = datetime.now(timezone.utc)
+    for area , author , share, total , n_authors, last in find_bus_factor(commits):
+        years = (now - last).days / 365.25
+        print(
+            f"{share:5.0%}  {author:<22} {total:5d} commits  {n_authors:3d} authors  "
+            f"last active {last:%Y-%m-%d} ({years:4.1f}y ago)  {area}"
+        )

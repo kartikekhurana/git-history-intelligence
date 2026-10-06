@@ -17,11 +17,12 @@ def parse_git_log(raw : str) -> list[Commit]:
             if current is not None:
                 commits.append(current)
             
-            commit_hash , author , date_str = line[2:].split("|",2)
+            commit_hash , author ,email , date_str = line[2:].split("|",3)
             current = Commit(
                 hash=commit_hash,
                 author=author,
-                date=datetime.strptime(date_str,"%Y-%m-%d %H:%M:%S %z"),
+                email=email,
+                date= datetime.strptime(date_str,"%Y-%m-%d %H:%M:%S %z"),
                 files=[],
             )
         elif current is not None:

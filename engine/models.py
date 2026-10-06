@@ -5,5 +5,6 @@ from datetime import datetime
 class Commit:
     hash : str
     author : str
+    email : str
     date : datetime
     files : list[str]

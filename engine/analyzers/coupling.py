@@ -2,10 +2,14 @@ import sys
 from collections import Counter
 from itertools import combinations
 from models import Commit
+from pathlib import PurePosixPath
 from parser import parse_git_log
 
 
 MAX_FILES_PER_COMMIT = 50
+
+def same_name(a:str,b:str)->bool:
+    return PurePosixPath(a).with_suffix("") == PurePosixPath(b).with_suffix("")
 
 def find_coupling(
         commits : list[Commit] , min_together : int = 2 , top_n : int = 10
@@ -23,6 +27,8 @@ def find_coupling(
     results = []
     for (a,b) ,together in pair_counts.items():
         if together < min_together:
+            continue
+        if same_name(a,b):
             continue
         strength = together / min(file_counts[a],file_counts[b])
         results.append((a,b,together,strength))

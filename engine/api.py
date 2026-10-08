@@ -8,11 +8,20 @@ from analyzers.hotspots import find_hotspots
 from analyzers.pr_risk import assess_pr
 from models import Commit
 from repo import RepoError, head_hash, read_commits, sync_repo
+from fastapi.middleware.cors import CORSMiddleware
+
+
 
 
 
 app = FastAPI(title="Git History Intelligence")
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type"],
+)
 BAD_REPO = "Could not load that repository. Check the owner and name."
 
 class RiskRequest(BaseModel):
@@ -105,3 +114,4 @@ def risk(owner : str , name : str , body : RiskRequest):
         "level": result.level,
         "reasons": result.reasons,
     }
+    

@@ -64,7 +64,9 @@ def assess_pr(recent: list[Commit] , changed : list[str]) -> Risk:
             if partner not in changed_set:
                 missing.append((f , partner ,strength))
 
-    score += min(30 , 10 * len(missing))   
+    unique_partners = {partner for _, partner, _ in missing}
+    score += min(30, 10 * len(unique_partners))
+      
     for f, partner, strength in missing[:5]:
         reasons.append(
             f"{f} changes together with {partner} {strength:.0%} of the time "

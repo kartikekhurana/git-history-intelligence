@@ -6,6 +6,8 @@ import { CouplingCard } from "@/components/CouplingCard";
 import { HotspotsCard } from "@/components/HotspotsCard";
 import { PrRiskCard } from "@/components/PrRiskCard";
 import { BusFactorCard } from "@/components/BusFactorCard";
+import { CouplingGraph } from "@/components/CouplingGraph";
+
 
 const WINDOWS = [
   { label: "6 mo", months: 6 },
@@ -165,9 +167,14 @@ export default function Home(){
           </p>
         )}
         {data && (
-          <div className={`mt-6 grid gap-4 md:grid-cols-2 ${loading ? "opacity-50" : ""}`}>
+          <div className={`mt-4 grid gap-4 md:grid-cols-2 ${loading ? "opacity-50" : ""}`}>
             <HotspotsCard items={data.hotspots} />
             <CouplingCard items={data.coupling} />
+          </div>
+        )}
+        {data && (
+          <div className={`mt-6 ${loading ? "opacity-50" : ""}`}>
+            <CouplingGraph graph={data.graph} />
           </div>
         )}
         {

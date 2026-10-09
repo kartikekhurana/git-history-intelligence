@@ -1,18 +1,28 @@
-import os 
+import os
 import re
+import shutil
 import subprocess
+import threading
+import time
 from pathlib import Path
+
+from filter import is_noise
 from models import Commit
 from parser import parse_git_log
-from filter import is_noise
 
 
 DATA_DIR = Path(__file__).parent / "data" / "repos"
 NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$")
 LOG_FORMAT = "--%H|%an|%ae|%ad"
 
+MAX_REPO_BYTES = int(os.environ.get("MAX_REPO_MB", "100")) * 1024 * 1024
+CLONE_TIMEOUT = int(os.environ.get("CLONE_TIMEOUT_SECONDS", "300"))
+_locks: dict[str, threading.Lock] = {}
 
 class RepoError(Exception):
+    pass
+
+class RepoTooLarge(RepoError):
     pass
 
 
@@ -22,30 +32,68 @@ def _validate(part : str) -> str:
     return part
 
 def _git(*args: str, cwd: Path | None = None, timeout: int = 300) -> str:
-    result = subprocess.run(
-        ["git",*args],
-        cwd=cwd,
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-        env={**os.environ,"GIT_TERMINAL_PROMPT": "0"},
-    )
+    try:
+        result = subprocess.run(
+            ["git",*args],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            env={**os.environ,"GIT_TERMINAL_PROMPT": "0"},
+        )
+    except subprocess.TimeoutExpired:
+        raise RepoError("git took too long") from None
     if result.returncode != 0:
         raise RepoError(result.stderr.strip() or "git command failed")
     return result.stdout
 
+def _folder_size(path: Path) -> int:
+    total = 0
+    for root, _, files in os.walk(path):
+        for name in files:
+            try:
+                total += os.path.getsize(os.path.join(root, name))
+            except OSError:
+                pass
+    return total
+
+def _clone(url:str , path : Path) -> None:
+    process = subprocess.Popen(
+        ["git", "clone", "--bare", "--filter=blob:none", "--quiet", url, str(path)],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        text=True,
+        env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
+    )
+    started = time.monotonic()
+    try:
+        while process.poll() is None:
+            if time.monotonic() - started > CLONE_TIMEOUT:
+                raise RepoError("git took too long")
+            if path.exists() and _folder_size(path) > MAX_REPO_BYTES:
+                raise RepoTooLarge("Repository is too large")
+            time.sleep(0.5)
+        if process.returncode != 0:
+            raise RepoError((process.stderr.read() or "").strip() or "git clone failed")
+    except BaseException:
+        process.kill()
+        process.wait()
+        shutil.rmtree(path,ignore_errors=True)
+        raise
+
 def sync_repo(owner : str,name : str) -> Path:
     owner , name = _validate(owner) , _validate(name)
-    path = DATA_DIR / f"{owner.lower()}__{name.lower()}.git"
-    if path.exists():
-        _git("fetch", "--quiet", "origin", "+refs/heads/*:refs/heads/*", cwd=path)
-    else:
-        DATA_DIR.mkdir(parents=True,exist_ok=True)
-        _git(
-            "clone", "--bare", "--filter=blob:none", "--quiet",
-            f"https://github.com/{owner}/{name}.git", str(path),
-        )
+    key = f"{owner}__{name}".lower()
+    path = DATA_DIR / f"{key}.git"
+
+    with _locks.setdefault(key, threading.Lock()):
+        if path.exists():
+            _git("fetch", "--quiet", "origin", "+refs/heads/*:refs/heads/*", cwd=path)
+        else:
+            DATA_DIR.mkdir(parents=True, exist_ok=True)
+            _clone(f"https://github.com/{owner}/{name}.git", path)
     return path
+
 
 def head_hash(path: Path) -> str:
     return _git("rev-parse", "HEAD", cwd=path).strip()

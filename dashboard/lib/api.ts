@@ -11,6 +11,7 @@ export type BusFactor ={
     last_active: string;
 }
 export type Analysis = {
+  graph: Graph;
   repo: string;
   commit_count: number;
   window_months: number;
@@ -27,6 +28,10 @@ export type RiskResult = {
   level : "low" | "medium" | "high";
   reasons : string[]
 };
+export type GraphNode = { id: string; area: string; changes: number };
+export type GraphEdge = { source: string; target: string; together: number; strength: number };
+export type Graph = { nodes: GraphNode[]; edges: GraphEdge[] };
+
 
 export function parseRepo(input: string): { owner: string; name: string } | null {
   const cleaned = input

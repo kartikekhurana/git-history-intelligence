@@ -6,6 +6,7 @@ from analyzers.bus_factor import find_bus_factor
 from analyzers.coupling import find_coupling
 from analyzers.hotspots import find_hotspots
 from analyzers.pr_risk import assess_pr
+from analyzers.graph import build_graph
 from models import Commit
 from repo import RepoError, head_hash, read_commits, sync_repo
 from fastapi.middleware.cors import CORSMiddleware
@@ -23,6 +24,7 @@ app.add_middleware(
     allow_headers=["Content-Type"],
 )
 BAD_REPO = "Could not load that repository. Check the owner and name."
+GRAPH_EDGES = 40
 
 class RiskRequest(BaseModel):
     files : list[str] = Field(min_length=1 , max_length=2500)
@@ -55,6 +57,7 @@ def recent_commits(commits: list[Commit], months: int) -> list[Commit]:
 
 def build_result(owner: str, name: str, commits: list[Commit] , months : int) -> dict:
     recent = recent_commits(commits, months)
+    pairs = find_coupling(recent , top_n=GRAPH_EDGES)
     return {
         "repo": f"{owner}/{name}",
         "commit_count": len(commits),
@@ -66,8 +69,9 @@ def build_result(owner: str, name: str, commits: list[Commit] , months : int) ->
         ],
         "coupling": [
             {"a": a, "b": b, "together": together, "strength": round(strength, 2)}
-            for a, b, together, strength in find_coupling(recent)
+            for a, b, together, strength in pairs[:10]
         ],
+        "graph": build_graph(recent, pairs),
         "bus_factor": [
             {
                 "area": area,

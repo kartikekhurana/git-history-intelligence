@@ -83,7 +83,7 @@ def assess_pr(recent: list[Commit] , changed : list[str]) -> Risk:
 
     for area, share ,total in solo:
         reasons.append(
-            f"{area} has effectively one recent maintainer ",
+            f"{area} has effectively one recent maintainer "
             f"({share:.0%} of {total} recent commits)"
         )
     if len(changed) >= BIG_PR_FILES:

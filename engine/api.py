@@ -10,7 +10,7 @@ from analyzers.graph import build_graph
 from analyzers.hotspots import find_hotspots
 from analyzers.pr_risk import assess_pr
 from models import Commit
-from rateLimit import RateLimiter
+from tmp_ratelimit import RateLimiter
 from repo import RepoError, RepoTooLarge, head_hash, is_new_repo, read_commits, sync_repo
 
 

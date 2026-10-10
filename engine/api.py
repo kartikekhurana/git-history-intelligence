@@ -12,8 +12,7 @@ from analyzers.pr_risk import assess_pr
 from models import Commit
 from tmp_ratelimit import RateLimiter
 from repo import RepoError, RepoTooLarge, head_hash, is_new_repo, read_commits, sync_repo
-
-
+import shutil
 
 ALLOWED_ORIGINS = os.environ.get(
     "ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000"
@@ -57,7 +56,7 @@ class RiskRequest(BaseModel):
 
 @app.get("/")
 def root():
-    return {"name": "Git History Intelligence API", "docs": "/docs"}
+    return {"status": "ok", "git": shutil.which("git") is not None}
 
 
 @app.get("/health")

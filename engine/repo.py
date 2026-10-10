@@ -17,6 +17,7 @@ LOG_FORMAT = "--%H|%an|%ae|%ad"
 
 MAX_REPO_BYTES = int(os.environ.get("MAX_REPO_MB", "100")) * 1024 * 1024
 CLONE_TIMEOUT = int(os.environ.get("CLONE_TIMEOUT_SECONDS", "300"))
+MAX_DISK_BYTES = int(os.environ.get("MAX_DISK_MB", "1000")) * 1024 * 1024
 _locks: dict[str, threading.Lock] = {}
 
 class RepoError(Exception):
@@ -81,17 +82,46 @@ def _clone(url:str , path : Path) -> None:
         shutil.rmtree(path,ignore_errors=True)
         raise
 
-def sync_repo(owner : str,name : str) -> Path:
+def repo_path(owner : str , name : str) -> Path:
     owner , name = _validate(owner) , _validate(name)
-    key = f"{owner}__{name}".lower()
-    path = DATA_DIR / f"{key}.git"
+    return DATA_DIR / f"{owner}__{name}.git".lower()
 
-    with _locks.setdefault(key, threading.Lock()):
+def is_new_repo(owner : str , name : str) -> bool:
+    try:
+        return not repo_path(owner , name).exists()
+    except RepoError:
+        return False
+
+def _evict_old(keep: Path) -> None:
+    repos = [p for p in DATA_DIR.glob("*.git") if p.is_dir()]
+    sizes = {p: _folder_size(p) for p in repos}
+    total = sum(sizes.values())
+    for p in sorted(repos, key=lambda p: p.stat().st_mtime):
+        if total <= MAX_DISK_BYTES:
+            break
+        if p == keep:
+            continue
+        lock = _locks.setdefault(p.stem, threading.Lock())
+        if lock.acquire(blocking=False):
+            try:
+                shutil.rmtree(p, ignore_errors=True)
+                total -= sizes[p]
+            finally:
+                lock.release()
+
+
+
+def sync_repo(owner: str, name: str) -> Path:
+    path = repo_path(owner, name)
+
+    with _locks.setdefault(path.stem, threading.Lock()):
         if path.exists():
             _git("fetch", "--quiet", "origin", "+refs/heads/*:refs/heads/*", cwd=path)
         else:
             DATA_DIR.mkdir(parents=True, exist_ok=True)
             _clone(f"https://github.com/{owner}/{name}.git", path)
+        os.utime(path, None)
+    _evict_old(keep=path)
     return path
 
 

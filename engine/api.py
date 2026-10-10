@@ -1,7 +1,8 @@
-from fastapi import FastAPI, HTTPException, Query
+import os
+from datetime import datetime, timedelta, timezone
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-from datetime import datetime, timedelta, timezone
 import cache
 from analyzers.bus_factor import find_bus_factor
 from analyzers.coupling import find_coupling
@@ -9,22 +10,45 @@ from analyzers.graph import build_graph
 from analyzers.hotspots import find_hotspots
 from analyzers.pr_risk import assess_pr
 from models import Commit
-from repo import RepoError, RepoTooLarge, head_hash, read_commits, sync_repo
+from rateLimit import RateLimiter
+from repo import RepoError, RepoTooLarge, head_hash, is_new_repo, read_commits, sync_repo
+
+
+
+ALLOWED_ORIGINS = os.environ.get(
+    "ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000"
+).split(",")
+
 
 app = FastAPI(title="Git History Intelligence")
 
 
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_methods=["GET", "POST"],
     allow_headers=["Content-Type"],
 )
 
+
 BAD_REPO = "Could not load that repository. Check the owner and name."
 TOO_LARGE = "This repository is too large for this demo. Try one with a smaller history."
+TOO_MANY = "Too many requests. Please wait a minute and try again."
+TOO_MANY_NEW = "You have analyzed several new repositories recently. Please wait a few minutes."
 GRAPH_EDGES = 40
 
+request_limiter = RateLimiter(int(os.environ.get("REQUESTS_PER_MINUTE", "60")), 60)
+download_limiter = RateLimiter(int(os.environ.get("NEW_REPOS_PER_10_MIN", "5")), 600)
+
+
+def enforce_limits(request : Request , owner : str , name : str) -> None:
+    ip = request.client.host if request.client else "unknown" 
+    if not request_limiter.allow(ip):
+        raise HTTPException(status_code=429,detail=TOO_MANY,headers={"Retry-After": "60"})
+    if is_new_repo(owner,name) and not download_limiter.allow(ip):
+        raise HTTPException(status_code=429,detail=TOO_MANY_NEW,headers={"Retry-After": "600"})
+    
 
 class RiskRequest(BaseModel):
     files: list[str] = Field(min_length=1, max_length=2500)
@@ -90,7 +114,8 @@ def build_result(owner: str, name: str, commits: list[Commit], months: int) -> d
 
 
 @app.get("/analyze/{owner}/{name}")
-def analyze(owner: str, name: str, months: int = Query(24, ge=1, le=600)):
+def analyze(request: Request,owner: str, name: str, months: int = Query(24, ge=1, le=600)):
+    enforce_limits(request, owner, name)
     key = f"{owner}/{name}/{months}".lower()
     entry = cache.get(key)
     if entry and cache.is_fresh(entry):
@@ -113,7 +138,8 @@ def analyze(owner: str, name: str, months: int = Query(24, ge=1, le=600)):
 
 
 @app.post("/risk/{owner}/{name}")
-def risk(owner: str, name: str, body: RiskRequest):
+def risk(request : Request,owner: str, name: str, body: RiskRequest):
+    enforce_limits(request, owner, name)
     try:
         _, commits = load_history(owner, name)
     except RepoTooLarge:

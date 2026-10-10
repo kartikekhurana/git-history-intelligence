@@ -39,6 +39,7 @@ export default function Home(){
       setData(result)
       setElapsed(Math.round(performance.now() - started));
     }catch(err){
+      setData(null)
       setError(err instanceof Error ? err.message : "Something went wrong.")
     }finally{
       setLoading(false)
